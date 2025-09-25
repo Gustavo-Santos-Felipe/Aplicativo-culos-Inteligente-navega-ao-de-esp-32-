@@ -561,6 +561,32 @@ function App() {
       advanceToStep(currentStepIndex);
   };
 
+  // Novos estados para gerenciar a interação com a IA
+  const [iaResposta, setIaResposta] = useState('');
+  const [iaLoading, setIaLoading] = useState(false);
+
+  // Função para enviar comando BLE para ESP32 iniciar IA
+  const perguntarIA = async () => {
+    setIaLoading(true);
+    setIaResposta('');
+    try {
+      // Exemplo: envia comando BLE (ajuste para sua lib BLE)
+      // await bleSend('IA_START');
+      // Aguarda resposta do ESP32 (pode ser via BLE notification ou polling)
+      // Exemplo fictício:
+      // const resposta = await bleReadIaResposta();
+      // setIaResposta(resposta);
+      // Simulação temporária:
+      setTimeout(() => {
+        setIaResposta('Resposta da IA recebida do ESP32!');
+        setIaLoading(false);
+      }, 4000);
+    } catch (e) {
+      setIaResposta('Erro ao perguntar à IA');
+      setIaLoading(false);
+    }
+  };
+
   if (!isLoaded) return <div className="loading-screen">Carregando...</div>;
 
   // Tela de carregamento
@@ -759,8 +785,14 @@ function App() {
           </div>
         )}
       </div>
+
+      <button onClick={perguntarIA} disabled={iaLoading} style={{margin: '16px', padding: '12px', fontSize: '1.2em'}}>
+        Perguntar à IA
+      </button>
+      {iaLoading && <div>Aguardando resposta da IA...</div>}
+      {iaResposta && <div><strong>IA:</strong> {iaResposta}</div>}
     </div>
   );
 }
 
-export default App; 
+export default App;

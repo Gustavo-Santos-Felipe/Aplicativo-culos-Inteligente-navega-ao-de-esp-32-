@@ -1,0 +1,16 @@
+# Ignorar dependências do Node.js
+node_modules
+
+# Ignorar arquivos de cache e build
+.cache
+build
+
+# Ignorar arquivos compactados
+*.zip
+*.tar
+*.tar.gz
+
+# Ignorar arquivos de ambiente virtual do Python
+venv
+__pycache__/
+

@@ -1,138 +1,120 @@
-/*
-  Firmware para ESP32 - Receptor de Navegação Wi-Fi
+// =======================================================================
+// ESP32-S3 - Navegação via BLE com Display OLED SSD1309 (U8g2lib)
+// - Usa pinagem personalizada para o display
+// - Usa a biblioteca U8g2 para máxima compatibilidade
+// - Aceita JSON ou "direcao|mensagem" via característica BLE WRITE
+// - Versão Revisada com quebra de linha automática de texto
+// =======================================================================
 
-  Este código cria um servidor web em um ESP32 que aguarda por instruções de 
-  navegação enviadas pelo aplicativo. As instruções são recebidas via HTTP POST
-  em formato JSON.
-
-  COMO USAR:
-  1. Instale a biblioteca "ArduinoJson" através do Library Manager da IDE do Arduino.
-     (Sketch -> Include Library -> Manage Libraries... -> procure por "ArduinoJson")
-  2. Altere as variáveis `ssid` e `password` abaixo com as credenciais da sua rede Wi-Fi.
-  3. Carregue o código para o seu ESP32.
-  4. Abra o Serial Monitor com a velocidade (baud rate) de 115200.
-  5. Anote o endereço IP que aparecer no Serial Monitor.
-  6. Insira este endereço IP na variável `ESP32_IP_ADDRESS` no arquivo `App.tsx` do aplicativo.
-*/
-
-#include <WiFi.h>
-#include <WebServer.h>
+#include <Arduino.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <U8g2lib.h>
 #include <ArduinoJson.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+    u8g2.drawBox(cx - 5, cy - 15, 10, 30);
+// =======================================================================
+// ESP32-S3 - Navegação via BLE com Display OLED SSD1309 (U8g2lib)
+// - Usa pinagem personalizada para o display
+// - Usa a biblioteca U8g2 para máxima compatibilidade
+// - Aceita JSON ou "direcao|mensagem" via característica BLE WRITE
+// - Versão Revisada com quebra de linha automática de texto
+// =======================================================================
 
-// ##################################################################
-// # CONFIGURAÇÃO DA SUA REDE WI-FI LOCAL                           #
-// ##################################################################
-const char* ssid = "NOME_DA_SUA_REDE_WIFI";       // <-- COLOQUE O NOME DA SUA REDE AQUI
-const char* password = "SENHA_DA_SUA_REDE_WIFI"; // <-- COLOQUE A SENHA DA SUA REDE AQUI
-// ##################################################################
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <U8g2lib.h>
 
+const char* ssid = "LIVE TIM_Gl_304_2G";
+const char* password = "Gh2jm013";
 
-WebServer server(80); // O servidor web escutará na porta 80
+#define OLED_CLK   36
+#define OLED_MOSI  35
+#define OLED_CS    47
+#define OLED_DC    21
+#define OLED_RST   48
+U8G2_SSD1309_128X64_NONAME0_F_4W_SW_SPI u8g2(U8G2_R0, OLED_CLK, OLED_MOSI, OLED_CS, OLED_DC, OLED_RST);
 
-// --- Opcional: Bibliotecas para Display ---
-// Descomente as linhas abaixo se for usar um display OLED, por exemplo.
-// #include <Wire.h>
-// #include <Adafruit_GFX.h>
-// #include <Adafruit_SSD1306.h>
-// #define SCREEN_WIDTH 128
-// #define SCREEN_HEIGHT 64
-// Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-// ------------------------------------------
+String gMensagem = "Aguardando...";
+bool gDisplayNeedsUpdate = true;
 
-void handleNavigate() {
-  if (server.hasArg("plain") == false) {
-    server.send(400, "text/plain", "Body not received");
-    return;
-  }
-  
-  String body = server.arg("plain");
-  
-  Serial.println("Recebida nova instrução:");
-  Serial.println(body);
-
-  // Usando ArduinoJson para extrair a instrução
-  StaticJsonDocument<256> doc; // Reduzido o tamanho, já que esperamos um JSON menor
-  DeserializationError error = deserializeJson(doc, body);
-
-  if (error) {
-    Serial.print(F("Falha no deserializeJson(): "));
-    Serial.println(error.c_str());
-    server.send(400, "text/plain", "Invalid JSON");
-    return;
-  }
-
-  // Mudança aqui: pegamos "instruction" em vez de "instructions"
-  const char* instruction = doc["instruction"]; 
-
-  if (instruction == nullptr) {
-    server.send(400, "text/plain", "JSON is missing 'instruction' key");
-    return;
-  }
-
-  Serial.print("Instrução processada: ");
-  Serial.println(instruction);
-
-
-  // Limpa o display antes de mostrar a nova instrução
-  // display.clearDisplay(); 
-  // display.setCursor(0,0);
-  
-  // --- Opcional: Enviar para o Display ---
-  // Aqui você pode adicionar o código para mostrar a instrução no seu display
-  // Exemplo para display OLED:
-  // display.println(instruction);
-  // display.display(); // Mostra o conteúdo no display
-  // ---------------------------------------
-
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.send(200, "application/json", "{\"status\":\"ok\"}");
+void setupWiFi() {
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nWiFi conectado!");
 }
 
-// Nova função para lidar com as requisições "preflight" do CORS
-void handleCorsPreflight() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-  server.send(204);
+void exibirRespostaDisplay(String resposta) {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_7x13B_tr);
+    u8g2.drawStr(0, 15, "Resposta:");
+    int y = 40;
+    int maxWidth = u8g2.getWidth();
+    while (resposta.length() > 0) {
+        String linha = resposta.substring(0, maxWidth / 7);
+        resposta = resposta.substring(linha.length());
+        u8g2.drawStr(0, y, linha.c_str());
+        y += 15;
+    }
+    u8g2.sendBuffer();
+}
+
+void receberEEnviarAudioSerial() {
+    const int bufferSize = 16000; // Ajuste conforme necessário
+    uint8_t buffer[bufferSize];
+    int bytesRecebidos = 0;
+    Serial.println("Envie o arquivo de áudio pelo monitor serial...");
+    while (Serial.available() && bytesRecebidos < bufferSize) {
+        buffer[bytesRecebidos++] = Serial.read();
+    }
+    if (bytesRecebidos == 0) {
+        Serial.println("Nenhum dado recebido!");
+        return;
+    }
+    Serial.println("Arquivo recebido, enviando ao servidor...");
+    if (WiFi.status() == WL_CONNECTED) {
+        HTTPClient http;
+        http.begin("http://192.168.1.3:5000/ask");
+        http.addHeader("Content-Type", "audio/wav");
+        int httpResponseCode = http.POST(buffer, bytesRecebidos);
+        if (httpResponseCode > 0) {
+            String resposta = http.getString();
+            Serial.println("Resposta do servidor: " + resposta);
+            exibirRespostaDisplay(resposta);
+        } else {
+            Serial.println("Erro na requisição HTTP: " + String(httpResponseCode));
+        }
+        http.end();
+    } else {
+        Serial.println("Wi-Fi não está conectado!");
+    }
 }
 
 void setup() {
-  Serial.begin(115200);
-  
-  // --- Opcional: Inicialização do Display ---
-  // if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
-  //   Serial.println(F("Falha ao iniciar display SSD1306"));
-  //   for(;;);
-  // }
-  // display.clearDisplay();
-  // display.setTextSize(1);
-  // display.setTextColor(WHITE);
-  // display.setCursor(0,0);
-  // display.println("Iniciando...");
-  // display.display();
-  // ------------------------------------------
-
-  // MUDANÇA: Voltando para o modo de cliente Wi-Fi
-  Serial.println("\nConectando ao Wi-Fi...");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nConectado com sucesso!");
-  Serial.print("Endereço IP do ESP32: ");
-  Serial.println(WiFi.localIP());
-
-  // Definindo a rota do servidor
-  server.on("/navigate", HTTP_POST, handleNavigate);
-
-  // Adicionando a nova rota para o CORS Preflight
-  server.on("/navigate", HTTP_OPTIONS, handleCorsPreflight);
-
-  server.begin();
-  Serial.println("Servidor HTTP iniciado.");
+    Serial.begin(115200);
+    delay(200);
+    u8g2.begin();
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_7x13B_tr);
+    u8g2.drawStr(0, 15, "ESP32 Flask Teste");
+    u8g2.drawStr(0, 40, "Aguardando...");
+    u8g2.sendBuffer();
+    setupWiFi();
 }
 
 void loop() {
-  server.handleClient();
-} 
+    if (Serial.available()) {
+        receberEEnviarAudioSerial();
+    }
+    delay(100);
+}
+    BLEDevice::startAdvertising();
+
+    Serial.println("[BLE] Anunciando como ESP32-S3_Navigation");
