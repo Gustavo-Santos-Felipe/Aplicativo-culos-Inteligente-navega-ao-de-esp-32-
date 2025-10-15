@@ -100,8 +100,12 @@ const NAVIGATION_TRIGGER_DISTANCE_METERS = 50; // Dispara o envio da instrução
 const libraries: "places"[] = ["places"];
 
 function App() {
+  // Copilot, modifique a inicialização do estado 'loginDados'. 
+  // Altere o valor inicial de 'null' para um objeto de usuário de teste, como { user: 'test_user' }, 
+  // para pular a tela de login durante o desenvolvimento.
+  // (Remova este comentário quando não for mais necessário.)
   // Estado para login inicial
-  const [loginDados, setLoginDados] = useState<any>(null);
+  const [loginDados, setLoginDados] = useState<any>({ user: 'test_user' });
 
   // Handler que recebe os dados do componente de login
   const handleLogin = (tipo: 'usuario' | 'responsavel', dados: any) => {
@@ -208,7 +212,7 @@ function App() {
 
   // Estados da aplicação
   const [appState, setAppState] = useState<AppState>('loading');
-  const [introStep] = useState(0);
+  const [introStep, setIntroStep] = useState(0);
   const [showLocationRequest, setShowLocationRequest] = useState(false);
 
   // map state omitted (unused)
@@ -346,6 +350,23 @@ function App() {
   useEffect(() => {
     preloadSounds();
   }, [preloadSounds]);
+
+  // Sequência da tela de introdução: passar de loading -> intro e animar elementos
+  useEffect(() => {
+    // iniciar a introdução logo após o carregamento inicial
+    const timers: number[] = [];
+    timers.push(window.setTimeout(() => setAppState('intro'), 300));
+    // anima logo
+    timers.push(window.setTimeout(() => setIntroStep(1), 700));
+    // anima título
+    timers.push(window.setTimeout(() => setIntroStep(2), 1400));
+    // mostrar pedido de localização pouco depois
+    timers.push(window.setTimeout(() => setShowLocationRequest(true), 1600));
+
+    return () => {
+      timers.forEach(t => clearTimeout(t));
+    };
+  }, []);
 
   // Registrar service worker para funcionalidade offline
   useEffect(() => {
