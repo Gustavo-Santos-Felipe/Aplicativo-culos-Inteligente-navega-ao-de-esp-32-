@@ -72,17 +72,6 @@ export const useOffline = () => {
     }
   }, [deferredPrompt]);
 
-  // Salvar dados offline
-  const saveOfflineData = useCallback((data: Partial<OfflineData>) => {
-    try {
-      const currentData = getOfflineData();
-      const newData = { ...currentData, ...data, lastSync: Date.now() };
-      localStorage.setItem('castrilha_offline_data', JSON.stringify(newData));
-    } catch (error) {
-      console.error('Erro ao salvar dados offline:', error);
-    }
-  }, []);
-
   // Carregar dados offline
   const getOfflineData = useCallback((): OfflineData => {
     try {
@@ -104,6 +93,17 @@ export const useOffline = () => {
       lastSync: Date.now()
     };
   }, []);
+
+  // Salvar dados offline
+  const saveOfflineData = useCallback((data: Partial<OfflineData>) => {
+    try {
+      const currentData = getOfflineData();
+      const newData = { ...currentData, ...data, lastSync: Date.now() };
+      localStorage.setItem('castrilha_offline_data', JSON.stringify(newData));
+    } catch (error) {
+      console.error('Erro ao salvar dados offline:', error);
+    }
+  }, [getOfflineData]);
 
   // Sincronizar dados quando online
   const syncData = useCallback(async () => {
@@ -128,15 +128,32 @@ export const useOffline = () => {
   }, [isOnline, getOfflineData, saveOfflineData]);
 
   // Registrar service worker
-  const registerServiceWorker = useCallback(async () => {
-    if ('serviceWorker' in navigator) {
-      try {
-        const registration = await navigator.serviceWorker.register('/sw.js');
-        console.log('Service Worker registrado:', registration);
-        return registration;
-      } catch (error) {
-        console.error('Erro ao registrar Service Worker:', error);
-      }
+  // registerServiceWorker(force = false):
+  // - force=true permite tentativa mesmo em localhost (para uso manual após aceitar certificado no navegador)
+  const registerServiceWorker = useCallback(async (force: boolean = false) => {
+    // Só registra o Service Worker se suportado
+    if (!('serviceWorker' in navigator)) {
+      console.warn('Service Worker não suportado neste navegador.');
+      return { ok: false, message: 'Service Worker não suportado' };
+    }
+
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isSecure = window.location.protocol === 'https:';
+
+    // Permitir registro em https ou localhost
+    if (!isSecure && !isLocalhost) {
+      const msg = 'Contexto não seguro (não-HTTPS) — Service Worker não registrado.';
+      console.warn(msg);
+      return { ok: false, message: msg };
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('Service Worker registrado:', registration);
+      return { ok: true, registration };
+    } catch (error: any) {
+      console.error('Erro ao registrar Service Worker:', error);
+      return { ok: false, message: String(error) };
     }
   }, []);
 

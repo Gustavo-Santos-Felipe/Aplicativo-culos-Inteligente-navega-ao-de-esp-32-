@@ -1,7 +1,12 @@
+  // Hook de status offline/online
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, Autocomplete, DirectionsRenderer } from '@react-google-maps/api';
+import CadastroUsuario from './components/CadastroUsuario';
+import LoginInicial from './components/LoginInicial';
+import { enviarCadastroParaESP32 } from './hooks/useEnviarCadastroBLE';
 import { useSounds } from './hooks/useSounds';
 import { useOffline } from './hooks/useOffline';
+// import WifiSetup from './components/WifiSetup'; // não usado por enquanto
 import { SoundControls } from './components/SoundControls';
 import { OfflineStatus } from './components/OfflineStatus';
 
@@ -95,23 +100,140 @@ const NAVIGATION_TRIGGER_DISTANCE_METERS = 50; // Dispara o envio da instrução
 const libraries: "places"[] = ["places"];
 
 function App() {
-  const { isLoaded } = useJsApiLoader({
+  // Estado para login inicial
+  const [loginDados, setLoginDados] = useState<any>(null);
+
+  // Handler que recebe os dados do componente de login
+  const handleLogin = (tipo: 'usuario' | 'responsavel', dados: any) => {
+    setLoginDados(dados);
+    // avançar para tela principal (ou intro) após login
+    setAppState('main');
+  };
+
+    // Verificar se o navegador suporta Web Bluetooth
+    const isBluetoothSupported = () => {
+      return 'bluetooth' in navigator;
+    };
+
+    // Função para conectar ao ESP32 via Bluetooth
+    const connectToESP32 = async () => {
+      playSound('click');
+      if (!isBluetoothSupported() || !navigator.bluetooth) {
+        alert("Seu navegador não suporta Web Bluetooth. Use Chrome ou Edge.");
+        playSound('error');
+        return;
+      }
+      setIsConnectingBluetooth(true);
+    
+      try {
+        // Solicitar dispositivo Bluetooth
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [
+            { name: ESP32_DEVICE_NAME },
+            { namePrefix: "ESP32" }
+          ],
+          optionalServices: [ESP32_SERVICE_UUID]
+        });
+
+        console.log("Dispositivo selecionado:", device.name);
+
+        // Conectar ao GATT Server
+        const server = await device.gatt?.connect();
+        if (!server) {
+          throw new Error("Não foi possível conectar ao servidor GATT");
+        }
+
+        // Obter o serviço
+        const service = await server.getPrimaryService(ESP32_SERVICE_UUID);
+      
+        // Obter a característica para escrita
+        const characteristic = await service.getCharacteristic(ESP32_CHARACTERISTIC_UUID);
+      
+        // Habilitar notificações se disponível
+        try {
+          await characteristic.startNotifications();
+          characteristic.addEventListener('characteristicvaluechanged', (event) => {
+            const target = event.target as unknown as BluetoothRemoteGATTCharacteristic;
+            const value = target.value;
+            if (value) {
+              const decoder = new TextDecoder();
+              const message = decoder.decode(value);
+              console.log("Mensagem recebida do ESP32:", message);
+            }
+          });
+        } catch (error) {
+          console.log("Notificações não disponíveis, apenas escrita");
+        }
+
+        setBluetoothDevice({
+          id: device.id,
+          name: device.name || ESP32_DEVICE_NAME,
+          gatt: server
+        });
+        setBluetoothCharacteristic(characteristic);
+        setIsBluetoothConnected(true);
+      
+        console.log("Conectado ao ESP32 via Bluetooth!");
+        alert("Conectado ao ESP32 via Bluetooth!");
+        playSound('connect');
+      
+      } catch (error) {
+        console.error("Erro ao conectar Bluetooth:", error);
+        if (error instanceof Error) {
+          if (error.name === 'NotFoundError') {
+            alert("ESP32 não encontrado. Verifique se está ligado e visível.");
+          } else if (error.name === 'NotAllowedError') {
+            alert("Permissão negada para Bluetooth.");
+          } else {
+            alert(`Erro de conexão: ${error.message}`);
+          }
+        } else {
+          alert("Erro desconhecido ao conectar Bluetooth.");
+          playSound('error');
+        }
+      } finally {
+        setIsConnectingBluetooth(false);
+      }
+    };
+
+  useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     libraries,
   });
 
+
+  // Hook de status offline/online (desestruturado completo aqui no topo para evitar chamadas condicionais)
+  const { isOnline, registerServiceWorker } = useOffline();
+
   // Estados da aplicação
   const [appState, setAppState] = useState<AppState>('loading');
-  const [introStep, setIntroStep] = useState(0);
+  const [introStep] = useState(0);
   const [showLocationRequest, setShowLocationRequest] = useState(false);
 
-  const [map, setMap] = useState<google.maps.Map | null>(null);
+  // map state omitted (unused)
   const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
   const [currentPosition, setCurrentPosition] = useState<google.maps.LatLngLiteral | null>(null);
   const [simplifiedInstructions, setSimplifiedInstructions] = useState<string[]>([]);
   
   // Novos estados para gerenciar a navegação e rotas salvas
+  // Estado para mostrar tela de cadastro
+  const [showCadastro, setShowCadastro] = useState(false);
+  const [cadastroStatus, setCadastroStatus] = useState<string>('');
+  // Validação completa de CPF (remove não dígitos, verifica tamanho, sequências e dígitos verificadores)
+  // Função para enviar cadastro (sem validação de CPF)
+  async function handleEnviarCadastro(dados: any) {
+    setCadastroStatus('Enviando para ESP32...');
+    try {
+      await enviarCadastroParaESP32(dados);
+      setCadastroStatus('Cadastro enviado com sucesso!');
+      setShowCadastro(false);
+    } catch (e) {
+      console.error('Erro ao enviar para ESP32:', e);
+      setCadastroStatus('Erro ao enviar para ESP32');
+      alert('Erro ao enviar cadastro para o dispositivo.');
+    }
+  }
   const [isNavigating, setIsNavigating] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([]);
@@ -126,147 +248,17 @@ function App() {
   const destinationRef = useRef<HTMLInputElement>(null);
 
   // Sistema de sons
-  const { playSound, playHoverSound, preloadSounds } = useSounds();
+  const { playSound, preloadSounds } = useSounds();
 
-  // Animação de entrada
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setAppState('intro');
-    }, 2000);
+  // Nota: a renderização das diferentes telas (login, usuário, responsável)
+  // é feita no final do componente. Removidas retornos antecipados para garantir
+  // que todos os hooks sejam executados de forma consistente.
 
-    return () => clearTimeout(timer);
-  }, []);
+  // Responsável: área especial para receber alertas
+  // Responsável: a UI específica também será renderizada no retorno final.
 
-  // Sequência de animação do intro
-  useEffect(() => {
-    if (appState === 'intro') {
-      const timer = setTimeout(() => {
-        setIntroStep(1);
-      }, 1000);
+  // Sistema offline (já inicializado no topo do componente)
 
-      return () => clearTimeout(timer);
-    }
-  }, [appState]);
-
-  useEffect(() => {
-    if (introStep === 1) {
-      const timer = setTimeout(() => {
-        setIntroStep(2);
-      }, 1500);
-
-      return () => clearTimeout(timer);
-    }
-  }, [introStep]);
-
-  useEffect(() => {
-    if (introStep === 2) {
-      const timer = setTimeout(() => {
-        setShowLocationRequest(true);
-      }, 1000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [introStep]);
-
-  // Sistema offline
-  const { 
-    isOnline, 
-    registerServiceWorker, 
-    saveOfflineData, 
-    getOfflineData,
-    sendNotification 
-  } = useOffline();
-
-  // Verificar se o navegador suporta Web Bluetooth
-  const isBluetoothSupported = () => {
-    return 'bluetooth' in navigator;
-  };
-
-  // Função para conectar ao ESP32 via Bluetooth
-  const connectToESP32 = async () => {
-    playSound('click');
-    if (!isBluetoothSupported() || !navigator.bluetooth) {
-      alert("Seu navegador não suporta Web Bluetooth. Use Chrome ou Edge.");
-      playSound('error');
-      return;
-    }
-
-    setIsConnectingBluetooth(true);
-    
-    try {
-      // Solicitar dispositivo Bluetooth
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [
-          {
-            name: ESP32_DEVICE_NAME
-          },
-          {
-            namePrefix: "ESP32"
-          }
-        ],
-        optionalServices: [ESP32_SERVICE_UUID]
-      });
-
-      console.log("Dispositivo selecionado:", device.name);
-
-      // Conectar ao GATT Server
-      const server = await device.gatt?.connect();
-      if (!server) {
-        throw new Error("Não foi possível conectar ao servidor GATT");
-      }
-
-      // Obter o serviço
-      const service = await server.getPrimaryService(ESP32_SERVICE_UUID);
-      
-      // Obter a característica para escrita
-      const characteristic = await service.getCharacteristic(ESP32_CHARACTERISTIC_UUID);
-      
-      // Habilitar notificações se disponível
-      try {
-        await characteristic.startNotifications();
-        characteristic.addEventListener('characteristicvaluechanged', (event) => {
-          const target = event.target as unknown as BluetoothRemoteGATTCharacteristic;
-          const value = target.value;
-          if (value) {
-            const decoder = new TextDecoder();
-            const message = decoder.decode(value);
-            console.log("Mensagem recebida do ESP32:", message);
-          }
-        });
-      } catch (error) {
-        console.log("Notificações não disponíveis, apenas escrita");
-      }
-
-      setBluetoothDevice({
-        id: device.id,
-        name: device.name || ESP32_DEVICE_NAME,
-        gatt: server
-      });
-      setBluetoothCharacteristic(characteristic);
-      setIsBluetoothConnected(true);
-      
-      console.log("Conectado ao ESP32 via Bluetooth!");
-      alert("Conectado ao ESP32 via Bluetooth!");
-      playSound('connect');
-      
-    } catch (error) {
-      console.error("Erro ao conectar Bluetooth:", error);
-      if (error instanceof Error) {
-        if (error.name === 'NotFoundError') {
-          alert("ESP32 não encontrado. Verifique se está ligado e visível.");
-        } else if (error.name === 'NotAllowedError') {
-          alert("Permissão negada para Bluetooth.");
-        } else {
-          alert(`Erro de conexão: ${error.message}`);
-        }
-      } else {
-        alert("Erro desconhecido ao conectar Bluetooth.");
-        playSound('error');
-      }
-    } finally {
-      setIsConnectingBluetooth(false);
-    }
-  };
 
   // Função para desconectar Bluetooth
   const disconnectBluetooth = async () => {
@@ -459,7 +451,7 @@ function App() {
     }
   };
 
-  const stopNavigation = () => {
+  const stopNavigation = useCallback(() => {
     playSound('click');
     if (locationWatcherId.current !== null) {
       navigator.geolocation.clearWatch(locationWatcherId.current);
@@ -468,7 +460,7 @@ function App() {
     setIsNavigating(false);
     alert("Navegação encerrada.");
     playSound('notification');
-  };
+  }, [playSound]);
 
   const advanceToStep = useCallback((stepIndex: number) => {
     if (!directionsResponse) return;
@@ -484,7 +476,7 @@ function App() {
     sendSingleInstructionToESP32(instructionText);
     setCurrentStepIndex(prevIndex => prevIndex + 1);
     playSound('instruction');
-  }, [directionsResponse, sendSingleInstructionToESP32]);
+  }, [directionsResponse, sendSingleInstructionToESP32, playSound, stopNavigation]);
 
   const handleLocationUpdate = useCallback((position: GeolocationPosition) => {
     if (!directionsResponse?.routes[0]) return;
@@ -518,7 +510,7 @@ function App() {
   const handleLocationError = useCallback((error: GeolocationPositionError) => {
     alert(`Erro de geolocalização: ${error.message}`);
     stopNavigation();
-  }, []);
+  }, [stopNavigation]);
   
   // Este useEffect é o cérebro da navegação em tempo real
   useEffect(() => {
@@ -587,7 +579,8 @@ function App() {
     }
   };
 
-  if (!isLoaded) return <div className="loading-screen">Carregando...</div>;
+  // Não bloquear todo o app enquanto o Google Maps carrega.
+  // Usaremos `isLoaded` apenas ao renderizar o mapa.
 
   // Tela de carregamento
   if (appState === 'loading') {
@@ -624,9 +617,32 @@ function App() {
     );
   }
 
+    // Se o usuário ainda não fez login, mostrar a tela de login inicial
+    if (!loginDados) {
+      return (
+        <div className="login-container">
+          <LoginInicial onLogin={handleLogin} />
+        </div>
+      );
+    }
+
   // Tela principal
   return (
     <div className='app-container'>
+      {/* Botão para abrir cadastro */}
+      <div style={{margin: '16px'}}>
+        <button onClick={() => setShowCadastro(true)} style={{padding: '10px 20px', fontWeight: 'bold'}}>Cadastrar Usuário/Responsável</button>
+        {cadastroStatus && <span style={{marginLeft: 16, color: 'blue'}}>{cadastroStatus}</span>}
+      </div>
+      {/* Modal de cadastro */}
+      {showCadastro && (
+        <div style={{position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.4)', zIndex: 9999}}>
+          <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', background: '#fff', borderRadius: 10, boxShadow: '0 2px 8px #0003', padding: 32}}>
+            <CadastroUsuario onEnviarBLE={handleEnviarCadastro} />
+            <button onClick={() => setShowCadastro(false)} style={{marginTop: 16}}>Fechar</button>
+          </div>
+        </div>
+      )}
       <div className='sidebar'>
         <div className='header'>
           <div className='logo-container'>
@@ -636,6 +652,24 @@ function App() {
           <div className="header-controls">
             <OfflineStatus className="header-offline-status" />
             <SoundControls className="header-sound-controls" />
+            <button
+              onClick={async () => {
+                try {
+                  // force true allows manual attempt on localhost after you accept certificate
+                  const res: any = await registerServiceWorker(true);
+                  if (res && res.ok) {
+                    alert('Service Worker registrado com sucesso.');
+                  } else {
+                    alert('Registro do Service Worker falhou: ' + (res && res.message ? res.message : 'ver console'));
+                  }
+                } catch (e) {
+                  alert('Erro ao tentar registrar Service Worker: ' + (e instanceof Error ? e.message : String(e)));
+                }
+              }}
+              style={{ marginLeft: 8 }}
+            >
+              Ativar offline (manual)
+            </button>
           </div>
         </div>
         
@@ -768,7 +802,6 @@ function App() {
             mapContainerStyle={containerStyle}
             center={currentPosition || { lat: -23.55052, lng: -46.633308 }}
             zoom={15}
-            onLoad={setMap}
             options={{
               mapTypeControl: false,
               streetViewControl: false,
