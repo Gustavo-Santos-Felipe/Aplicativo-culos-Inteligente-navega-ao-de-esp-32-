@@ -5,6 +5,7 @@ O projeto consiste em um sistema embarcado de navegação, baseado no ESP32-S3, 
 ---
 
 ## *Componentes Principais*
+![Uploading WhatsApp Image 2026-01-08 at 22.40.26 (1).jpeg…]()
 
 ### *1. ESP32-S3*
 - Microcontrolador central do sistema.
