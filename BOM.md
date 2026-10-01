@@ -20,7 +20,7 @@
 | [Glasses Frame 3D](https://studio.tripo3d.ai/pt/3d-model/a-functional-3d-printable-augmented-reality-glasses-frame-designed-for-5c092efb-6659-4d0b-a680-87f9929f16ce) | Physical and ergonomic support to mount components | 1 | $0.01 | $0.01 | [internet](https://studio.tripo3d.ai/pt/3d-model/a-functional-3d-printable-augmented-reality-glasses-frame-designed-for-5c092efb-6659-4d0b-a680-87f9929f16ce) |
 | [TP4056 Charging Module](https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcSIMbMuWtokdR5FLDnwjZs6YhFepFxnDPattpzJKQEQkIC4h8UzwzKrWW0Eu-bTfscSAjbnPlGkGHLZZdHassbv2MokWH0Rhz1L0L5220zQyrwksrw7L_hhXQ) | Safe battery management and USB charging | 1 | $1.20 | $1.20 | [Mercado Livre](https://encrypted-tbn0.gstatic.com/shopping?q=tbn:ANd9GcSIMbMuWtokdR5FLDnwjZs6YhFepFxnDPattpzJKQEQkIC4h8UzwzKrWW0Eu-bTfscSAjbnPlGkGHLZZdHassbv2MokWH0Rhz1L0L5220zQyrwksrw7L_hhXQ) |
 | **Parts subtotal** | — | — | — | **$59.91** | — |
-| **Tax & shipping** | — | — | — | **$0.00** | — |
-| **Total** | — | — | — | **$59.91** | — |
+| **Tax & shipping** | — | — | — | **$4.60** | — |
+| **Total** | — | — | — | **$64.51** | — |
 
-$5.09 left of the tier's funding.
+$0.49 left of the tier's funding.
